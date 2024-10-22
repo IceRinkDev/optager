@@ -7,15 +7,16 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
 	"os"
 	"os/exec"
+	"strings"
 
+	"github.com/IceRinkDev/optager/internal/storage"
 	"github.com/spf13/cobra"
 )
 
 var installCmd = &cobra.Command{
-	Use:   "install [path-to-archive]",
+	Use:   "install PATH-TO-ARCHIVE",
 	Short: "Install an archive into /opt/",
 	Args: func(cmd *cobra.Command, args []string) error {
 		err := cobra.ExactArgs(1)(cmd, args)
@@ -25,7 +26,7 @@ var installCmd = &cobra.Command{
 		fileInfo, err := os.Stat(args[0])
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
-				return fmt.Errorf("specified file does not exist")
+				return fmt.Errorf("specified path does not exist")
 			} else {
 				return err
 			}
@@ -35,9 +36,30 @@ var installCmd = &cobra.Command{
 		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		err := exec.Command("sudo", "tar", "-xf", args[0], "-C", "/opt/").Run()
+		output, err := exec.Command("bash", "-c", fmt.Sprintf("tar --exclude=\"*/*\" -tf %s", args[0])).Output()
+		if err == nil {
+			outstr := string(output)
+			folderNames := strings.Split(strings.TrimSpace(outstr), "\n")
+			if len(folderNames) > 1 {
+				fmt.Println("This would extract the following folders and files into /opt/:")
+				for _, folderName := range folderNames {
+					fmt.Println("\t", folderName)
+				}
+				fmt.Println("This archive is most likely not supposed to be installed into /opt/")
+				os.Exit(1)
+			}
+			if len(folderNames) == 1 {
+				xdgStorage := storage.New()
+				xdgStorage.AddPkg(storage.Pkg{FolderName: folderNames[0]})
+			} else {
+				fmt.Println("Error: archive is empty")
+				os.Exit(1)
+			}
+		}
+
+		err = exec.Command("sudo", "tar", "-xf", args[0], "-C", "/opt/").Run()
 		if err != nil {
-			log.Fatalln("could not extract the archive")
+			fmt.Println("Error: could not extract the archive")
 		}
 	},
 }
