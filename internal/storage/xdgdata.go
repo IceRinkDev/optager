@@ -21,6 +21,7 @@ type xdgDataStorage struct {
 type Pkg struct {
 	FolderName string   `json:"folderName"`
 	Binaries   []string `json:"binaries,omitempty"`
+	Global     bool     `json:"global,omitempty"`
 }
 
 func New() *xdgDataStorage {
