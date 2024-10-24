@@ -69,7 +69,13 @@ By default it will also symlink the binaries to ~/.local/bin/.`,
 			os.Exit(1)
 		}
 
-		linkedBinaries := symlinkToUser(newPkg.FolderName)
+		var linkedBinaries []string
+		if global, _ := cmd.Flags().GetBool("global"); global {
+			newPkg.Global = true
+			linkedBinaries = symlinkToRoot(newPkg.FolderName)
+		} else {
+			linkedBinaries = symlinkToUser(newPkg.FolderName)
+		}
 		if len(linkedBinaries) > 0 {
 			newPkg.Binaries = linkedBinaries
 			fmt.Println("Successfully installed the package")
@@ -95,6 +101,7 @@ By default it will also symlink the binaries to ~/.local/bin/.`,
 
 func init() {
 	rootCmd.AddCommand(installCmd)
+	installCmd.Flags().BoolP("global", "g", false, "symlink binaries to /usr/local/bin/")
 }
 
 func symlinkToUser(folder string) []string {
@@ -111,10 +118,15 @@ func symlinkToUser(folder string) []string {
 	}
 
 	pkgBinPath := filepath.Join("/opt", folder, "bin")
-	return symlink(pkgBinPath, localBin)
+	return symlink(pkgBinPath, localBin, false)
 }
 
-func symlink(srcPath, destPath string) (linkedBinaries []string) {
+func symlinkToRoot(folder string) []string {
+	pkgBinPath := filepath.Join("/opt", folder, "bin")
+	return symlink(pkgBinPath, "/usr/local/bin/", true)
+}
+
+func symlink(srcPath, destPath string, sudo bool) (linkedBinaries []string) {
 	pkgBinDir, err := os.Open(srcPath)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -130,9 +142,15 @@ func symlink(srcPath, destPath string) (linkedBinaries []string) {
 		return
 	}
 	for _, binary := range binaries {
-		err := os.Symlink(filepath.Join(srcPath, binary), filepath.Join(destPath, binary))
+		var symlinkCmd *exec.Cmd
+		if sudo {
+			symlinkCmd = exec.Command("sudo", "ln", "-s", filepath.Join(srcPath, binary), filepath.Join(destPath, binary))
+		} else {
+			symlinkCmd = exec.Command("ln", "-s", filepath.Join(srcPath, binary), filepath.Join(destPath, binary))
+		}
+		err := symlinkCmd.Run()
 		if err != nil {
-			fmt.Println("Error: could not create symlink for binary")
+			fmt.Println("Error: could not link binary", binary, "into", destPath)
 		} else {
 			linkedBinaries = append(linkedBinaries, binary)
 		}
