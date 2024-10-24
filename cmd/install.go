@@ -63,6 +63,10 @@ By default it will also symlink the binaries to ~/.local/bin/.`,
 			os.Exit(1)
 		}
 
+		if name, _ := cmd.Flags().GetString("name"); name != "" {
+			newPkg.Name = name
+		}
+
 		err = exec.Command("sudo", "tar", "-xf", args[0], "-C", "/opt/").Run()
 		if err != nil {
 			fmt.Println("Error: could not extract the archive")
@@ -102,6 +106,7 @@ By default it will also symlink the binaries to ~/.local/bin/.`,
 func init() {
 	rootCmd.AddCommand(installCmd)
 	installCmd.Flags().BoolP("global", "g", false, "symlink binaries to /usr/local/bin/")
+	installCmd.Flags().StringP("name", "n", "", "set name for the package")
 }
 
 func symlinkToUser(folder string) []string {
