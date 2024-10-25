@@ -61,6 +61,21 @@ func New() *xdgDataStorage {
 	return &ds
 }
 
+type GetPkgResult struct {
+	Pkg
+	Index int
+}
+
+func (ds xdgDataStorage) GetPkg(name string) (GetPkgResult, error) {
+	name = strings.ToLower(name)
+	for i, pkg := range ds.packages {
+		if name == strings.ToLower(pkg.Name) || name == strings.ToLower(pkg.FolderName) {
+			return GetPkgResult{pkg, i}, nil
+		}
+	}
+	return GetPkgResult{}, fmt.Errorf("package not found")
+}
+
 func (ds *xdgDataStorage) AddPkg(newPkg Pkg) {
 	if !slices.ContainsFunc(ds.packages, func(p Pkg) bool {
 		return p.FolderName == newPkg.FolderName
@@ -68,6 +83,15 @@ func (ds *xdgDataStorage) AddPkg(newPkg Pkg) {
 		ds.packages = append(ds.packages, newPkg)
 		ds.saveToFS()
 	}
+}
+
+func (ds *xdgDataStorage) RemovePkgAt(index int) error {
+	if index < 0 || index >= len(ds.packages) {
+		return fmt.Errorf("index out of bounds")
+	}
+	ds.packages = append(ds.packages[:index], ds.packages[index+1:]...)
+	ds.saveToFS()
+	return nil
 }
 
 func (ds xdgDataStorage) String() string {
