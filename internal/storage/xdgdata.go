@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 )
 
 type xdgDataStorage struct {
@@ -23,6 +24,16 @@ type Pkg struct {
 	Name       string   `json:"name,omitempty"`
 	Binaries   []string `json:"binaries,omitempty"`
 	Global     bool     `json:"global,omitempty"`
+}
+
+func (p Pkg) String() string {
+	var str string
+	if p.Name != "" {
+		str = fmt.Sprintf("%s (%s)", p.Name, p.FolderName)
+	} else {
+		str = p.FolderName
+	}
+	return str
 }
 
 func New() *xdgDataStorage {
@@ -57,6 +68,32 @@ func (ds *xdgDataStorage) AddPkg(newPkg Pkg) {
 		ds.packages = append(ds.packages, newPkg)
 		ds.saveToFS()
 	}
+}
+
+func (ds xdgDataStorage) String() string {
+	indent := "   "
+	sbGlobal := &strings.Builder{}
+	sbLocal := &strings.Builder{}
+	for _, pkg := range ds.packages {
+		sb := sbLocal
+		if pkg.Global {
+			sb = sbGlobal
+		}
+		sb.WriteString(indent + pkg.String() + "\n")
+	}
+	strGlobal := sbGlobal.String()
+	if strGlobal == "" {
+		strGlobal = "Global: none\n"
+	} else {
+		strGlobal = "Global:\n" + strGlobal
+	}
+	strLocal := sbLocal.String()
+	if strLocal == "" {
+		strLocal = "Local: none\n"
+	} else {
+		strLocal = "Local:\n" + strLocal
+	}
+	return strings.TrimSpace(strGlobal + "\n" + strLocal)
 }
 
 func (ds xdgDataStorage) saveToFS() {
