@@ -57,7 +57,7 @@ By default it will also symlink the binaries to ~/.local/bin/.`,
 			fmt.Println("This archive is most likely not supposed to be installed into /opt/")
 			os.Exit(1)
 		} else if len(folderNames) == 1 {
-			newPkg = storage.Pkg{FolderName: folderNames[0]}
+			newPkg = storage.Pkg{FolderName: strings.Trim(folderNames[0], "/")}
 		} else {
 			fmt.Println("Error: archive is empty")
 			os.Exit(1)
