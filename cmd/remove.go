@@ -40,15 +40,23 @@ var removeCmd = &cobra.Command{
 					baseBinDir = filepath.Join(homeDir, ".local", "bin")
 				}
 				for _, binary := range pkg.Binaries {
-					err = exec.Command("sudo", "rm", filepath.Join(baseBinDir, binary)).Run()
-					if err != nil {
-						fmt.Println("Error: could not remove", binary, "from", baseBinDir)
+					binPath := filepath.Join(baseBinDir, binary)
+					_, err := os.Lstat(binPath)
+					if err == nil {
+						err = exec.Command("sudo", "rm", binPath).Run()
+						if err != nil {
+							fmt.Println("Error: could not remove", binary, "from", baseBinDir)
+						}
 					}
 				}
 
-				err := exec.Command("sudo", "rm", "-rf", filepath.Join("/opt/", pkg.FolderName)).Run()
-				if err != nil {
-					fmt.Println("Error: could not remove package from /opt/")
+				pkgPath := filepath.Join("/opt/", pkg.FolderName)
+				_, err := os.Lstat(pkgPath)
+				if err == nil {
+					err := exec.Command("sudo", "rm", "-rf", pkgPath).Run()
+					if err != nil {
+						fmt.Println("Error: could not remove package from /opt/")
+					}
 				}
 
 				err = dataStorage.RemovePkgAt(pkg.Index)
