@@ -39,7 +39,7 @@ var removeCmd = &cobra.Command{
 				} else {
 					homeDir, err := os.UserHomeDir()
 					if err != nil {
-						fmt.Println("Error: no home folder found")
+						fmt.Fprintln(os.Stderr, "Error: no home folder found")
 						continue
 					}
 					baseBinDir = filepath.Join(homeDir, ".local", "bin")
@@ -50,7 +50,7 @@ var removeCmd = &cobra.Command{
 					if err == nil {
 						err = exec.Command("sudo", "rm", binPath).Run()
 						if err != nil {
-							fmt.Println("Error: could not remove", binary, "from", baseBinDir)
+							fmt.Fprintln(os.Stderr, "Error: could not remove", binary, "from", baseBinDir)
 							continue argsLoop
 						}
 					}
@@ -61,14 +61,14 @@ var removeCmd = &cobra.Command{
 				if err == nil {
 					err := exec.Command("sudo", "rm", "-rf", pkgPath).Run()
 					if err != nil {
-						fmt.Println("Error: could not remove", pkgPath)
+						fmt.Fprintln(os.Stderr, "Error: could not remove", pkgPath)
 						continue
 					}
 				}
 
 				err = dataStorage.RemovePkgAt(pkg.Index)
 				if err != nil {
-					fmt.Println("Error: could not remove", arg, "from package-list")
+					fmt.Fprintln(os.Stderr, "Error: could not remove", arg, "from package-list")
 					continue
 				}
 				removedPkgNames = append(removedPkgNames, pkg.String())
