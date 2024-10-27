@@ -41,7 +41,7 @@ By default it will also symlink the binaries to ~/.local/bin/.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		output, err := exec.Command("bash", "-c", fmt.Sprintf("tar --exclude=\"*/*\" -tf %s", args[0])).Output()
 		if err != nil {
-			fmt.Println("Error: problem inspecting the archive")
+			fmt.Fprintln(os.Stderr, "Error: problem inspecting the archive")
 			os.Exit(1)
 		}
 
@@ -59,7 +59,7 @@ By default it will also symlink the binaries to ~/.local/bin/.`,
 		} else if len(folderNames) == 1 {
 			newPkg = storage.Pkg{FolderName: strings.Trim(folderNames[0], "/")}
 		} else {
-			fmt.Println("Error: archive is empty")
+			fmt.Fprintln(os.Stderr, "Error: archive is empty")
 			os.Exit(1)
 		}
 
@@ -69,7 +69,7 @@ By default it will also symlink the binaries to ~/.local/bin/.`,
 
 		err = exec.Command("sudo", "tar", "-xf", args[0], "-C", "/opt/").Run()
 		if err != nil {
-			fmt.Println("Error: could not extract the archive")
+			fmt.Fprintln(os.Stderr, "Error: could not extract the archive")
 			os.Exit(1)
 		}
 
@@ -112,13 +112,13 @@ func init() {
 func symlinkToUser(folder string) []string {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		fmt.Println("Error: no home folder found")
+		fmt.Fprintln(os.Stderr, "Error: no home folder found")
 		return nil
 	}
 	localBin := filepath.Join(homeDir, ".local", "bin")
 	err = os.MkdirAll(localBin, 0775)
 	if err != nil {
-		fmt.Println("Error: could not create folder", localBin)
+		fmt.Fprintln(os.Stderr, "Error: could not create folder", localBin)
 		return nil
 	}
 
@@ -135,15 +135,15 @@ func symlink(srcPath, destPath string, sudo bool) (linkedBinaries []string) {
 	pkgBinDir, err := os.Open(srcPath)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			fmt.Println("Error: installed package has no bin/ folder")
+			fmt.Fprintln(os.Stderr, "Error: installed package has no bin/ folder")
 		} else {
-			fmt.Println("Error: could not access", srcPath)
+			fmt.Fprintln(os.Stderr, "Error: could not access", srcPath)
 		}
 		return
 	}
 	binaries, err := pkgBinDir.Readdirnames(0)
 	if err != nil {
-		fmt.Println("Error: could not read the contents of the", srcPath, "folder")
+		fmt.Fprintln(os.Stderr, "Error: could not read the contents of the", srcPath, "folder")
 		return
 	}
 	for _, binary := range binaries {
@@ -155,7 +155,7 @@ func symlink(srcPath, destPath string, sudo bool) (linkedBinaries []string) {
 		}
 		err := symlinkCmd.Run()
 		if err != nil {
-			fmt.Println("Error: could not link binary", binary, "into", destPath)
+			fmt.Fprintln(os.Stderr, "Error: could not link binary", binary, "into", destPath)
 		} else {
 			linkedBinaries = append(linkedBinaries, binary)
 		}

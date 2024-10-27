@@ -41,7 +41,7 @@ func New() *xdgDataStorage {
 	if dataBaseDir == "" {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
-			fmt.Println("Error: no home folder found")
+			fmt.Fprintln(os.Stderr, "Error: no home folder found")
 			os.Exit(1)
 		}
 		dataBaseDir = filepath.Join(homeDir, ".local", "share")
@@ -123,16 +123,16 @@ func (ds xdgDataStorage) String() string {
 func (ds xdgDataStorage) saveToFS() {
 	newContent, err := json.Marshal(ds.packages)
 	if err != nil {
-		fmt.Println("Error: could not marshal new package list")
+		fmt.Fprintln(os.Stderr, "Error: could not marshal new package list")
 		os.Exit(1)
 	}
 	err = os.MkdirAll(filepath.Dir(ds.filePath), 0700)
 	if err != nil && !errors.Is(err, fs.ErrExist) {
-		fmt.Println("Error: could not create folder", filepath.Dir(ds.filePath), "for saving")
+		fmt.Fprintln(os.Stderr, "Error: could not create folder", filepath.Dir(ds.filePath), "for saving")
 		os.Exit(1)
 	}
 	err = os.WriteFile(ds.filePath, newContent, 0600)
 	if err != nil {
-		fmt.Printf("Error: could not store changes\n%s\n", err)
+		fmt.Fprintf(os.Stderr, "Error: could not store changes\n%s\n", err)
 	}
 }
