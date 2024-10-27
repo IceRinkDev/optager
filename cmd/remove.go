@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/IceRinkDev/optager/internal/storage"
 	"github.com/spf13/cobra"
@@ -25,6 +26,10 @@ var removeCmd = &cobra.Command{
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		dataStorage := storage.New()
+
+		removedPkgNames := make([]string, 0, len(args))
+
+	argsLoop:
 		for _, arg := range args {
 			pkg, err := dataStorage.GetPkg(arg)
 			if err == nil {
@@ -35,7 +40,7 @@ var removeCmd = &cobra.Command{
 					homeDir, err := os.UserHomeDir()
 					if err != nil {
 						fmt.Println("Error: no home folder found")
-						os.Exit(1)
+						continue
 					}
 					baseBinDir = filepath.Join(homeDir, ".local", "bin")
 				}
@@ -46,6 +51,7 @@ var removeCmd = &cobra.Command{
 						err = exec.Command("sudo", "rm", binPath).Run()
 						if err != nil {
 							fmt.Println("Error: could not remove", binary, "from", baseBinDir)
+							continue argsLoop
 						}
 					}
 				}
@@ -55,15 +61,34 @@ var removeCmd = &cobra.Command{
 				if err == nil {
 					err := exec.Command("sudo", "rm", "-rf", pkgPath).Run()
 					if err != nil {
-						fmt.Println("Error: could not remove package from /opt/")
+						fmt.Println("Error: could not remove", pkgPath)
+						continue
 					}
 				}
 
 				err = dataStorage.RemovePkgAt(pkg.Index)
 				if err != nil {
-					fmt.Println("Error: could not remove package from package-list")
+					fmt.Println("Error: could not remove", arg, "from package-list")
+					continue
+				}
+				removedPkgNames = append(removedPkgNames, pkg.String())
+			}
+		}
+		if len(removedPkgNames) < 1 {
+			fmt.Println("No packages removed")
+		} else {
+			sb := strings.Builder{}
+			for i, pkgName := range removedPkgNames {
+				switch i {
+				case 0:
+					sb.WriteString(`"` + pkgName + `"`)
+				case len(removedPkgNames) - 1:
+					sb.WriteString(` and "` + pkgName + `"`)
+				default:
+					sb.WriteString(`, "` + pkgName + `"`)
 				}
 			}
+			fmt.Println("Successfully removed " + sb.String())
 		}
 	},
 }
