@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/IceRinkDev/optager/internal/storage"
@@ -39,22 +40,33 @@ By default it will also symlink the binaries to ~/.local/bin/.`,
 		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		output, err := exec.Command("bash", "-c", fmt.Sprintf("tar --exclude=\"*/*\" -tf %s", args[0])).Output()
+		output, err := exec.Command("tar", "-tf", args[0]).Output()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Error: problem inspecting the archive")
 			os.Exit(1)
 		}
+		outstr := string(output)
+
+		archiveFiles := strings.Split(strings.TrimSpace(outstr), "\n")
+		folderNames := make([]string, 0, 1)
+
+		for _, path := range archiveFiles {
+			split := strings.SplitAfterN(path, "/", 2)
+			if len(split) == 2 {
+				if !slices.Contains(folderNames, split[0]) {
+					folderNames = append(folderNames, split[0])
+				}
+			}
+		}
 
 		var newPkg storage.Pkg
 
-		outstr := string(output)
-		folderNames := strings.Split(strings.TrimSpace(outstr), "\n")
 		if len(folderNames) > 1 {
 			fmt.Println("This would extract the following folders and files into /opt/:")
 			for _, folderName := range folderNames {
 				fmt.Println("\t", folderName)
 			}
-			fmt.Println("This archive is most likely not supposed to be installed into /opt/")
+			fmt.Println("Therefore this archive is most likely not supposed to be installed in /opt/")
 			os.Exit(1)
 		} else if len(folderNames) == 1 {
 			newPkg = storage.Pkg{FolderName: strings.Trim(folderNames[0], "/")}
