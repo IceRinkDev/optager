@@ -56,6 +56,15 @@ var removeCmd = &cobra.Command{
 					}
 				}
 
+				if pkg.FolderName == "" {
+					if pkg.Name != "" {
+						fmt.Fprintln(os.Stderr, "Error: package \""+pkg.Name+"\" has no folder associated with it")
+					} else {
+						fmt.Fprintln(os.Stderr, "Error: package has no folder associated with it")
+					}
+					continue
+				}
+
 				pkgPath := filepath.Join("/opt/", pkg.FolderName)
 				_, err := os.Lstat(pkgPath)
 				if err == nil {
