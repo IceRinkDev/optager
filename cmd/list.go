@@ -15,10 +15,15 @@ var listCmd = &cobra.Command{
 	Short: "List all installed packages",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println(storage.New())
+		if verbose, _ := cmd.Flags().GetBool("verbose"); verbose {
+			fmt.Println(storage.New().DetailedString())
+		} else {
+			fmt.Println(storage.New())
+		}
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(listCmd)
+	listCmd.Flags().BoolP("verbose", "v", false, "make list verbose")
 }

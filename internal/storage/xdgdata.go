@@ -95,6 +95,28 @@ func (ds *xdgDataStorage) RemovePkgAt(index int) error {
 }
 
 func (ds xdgDataStorage) String() string {
+	return ds.printPackages(func(builder *strings.Builder, pkg Pkg, indent string) {
+		builder.WriteString(indent + pkg.String() + "\n")
+	})
+}
+
+func (ds xdgDataStorage) DetailedString() string {
+	return ds.printPackages(func(builder *strings.Builder, pkg Pkg, indent string) {
+		doubleIndent := indent + indent
+		builder.WriteString(indent + pkg.String() + ":\n")
+		builder.WriteString(doubleIndent + "Binaries: [")
+		for i, binary := range pkg.Binaries {
+			if i != len(pkg.Binaries)-1 {
+				builder.WriteString(binary + ", ")
+			} else {
+				builder.WriteString(binary)
+			}
+		}
+		builder.WriteString("]\n")
+	})
+}
+
+func (ds xdgDataStorage) printPackages(f func(builder *strings.Builder, pkg Pkg, indent string)) string {
 	indent := "   "
 	sbGlobal := &strings.Builder{}
 	sbLocal := &strings.Builder{}
@@ -103,11 +125,11 @@ func (ds xdgDataStorage) String() string {
 		if pkg.Global {
 			sb = sbGlobal
 		}
-		sb.WriteString(indent + pkg.String() + "\n")
+		f(sb, pkg, indent)
 	}
 	strGlobal := sbGlobal.String()
 	if strGlobal == "" {
-		strGlobal = "Global: none\n"
+		strGlobal = "Global: none"
 	} else {
 		strGlobal = "Global:\n" + strGlobal
 	}
