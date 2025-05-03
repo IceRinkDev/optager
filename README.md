@@ -8,7 +8,20 @@ Standard of Linux as well as the XDG Base Directory Specification.
 
 ## Installation
 
-To install optager on your system you have to have `git` and `go` installed.
+To install optager you have to download the .tar.gz from the release page [(here)](https://github.com/IceRinkDev/optager/releases/latest).
+Once you downloaded the archive, run the following command (replacing `<version>` with the one you downloaded):
+
+```sh
+mkdir -p ~/.local/bin
+tar -xzf optager-<version>.tar.gz -C ~/.local/bin
+
+# If you want to install it for every user on the system then use:
+sudo tar -xzf optager-<version>.tar.gz -C /usr/local/bin
+```
+
+### Git-Version
+
+In case you want to install the current state on git onto your system you have to have `git` and `go` installed.
 You can then clone this repository, change into the cloned directory and then
 run
 
