@@ -1,0 +1,35 @@
+name: Build Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        required: true
+        type: string
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    env:
+      TAG_NAME: v${{ inputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+      - name: Install dependencies
+        run: go get .
+      - name: Build
+        run: go build -v
+      - name: Compress
+        run: tar -czf optager-$TAG_NAME.tar.gz optager
+      - name: Create Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$TAG_NAME" --draft --target $GITHUB_SHA optager-$TAG_NAME.tar.gz
