@@ -4,16 +4,19 @@ Copyright © 2024 IceRinkDev
 package cmd
 
 import (
+	"archive/tar"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/IceRinkDev/optager/internal/storage"
+	"github.com/mholt/archives"
 	"github.com/spf13/cobra"
 )
 
@@ -40,38 +43,9 @@ By default it will also symlink the binaries to ~/.local/bin/.`,
 		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		output, err := exec.Command("tar", "-tf", args[0]).Output()
+		newPkg, err := gatherPackageInfo(args[0])
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "Error: problem inspecting the archive")
-			os.Exit(1)
-		}
-		outstr := string(output)
-
-		archiveFiles := strings.Split(strings.TrimSpace(outstr), "\n")
-		folderNames := make([]string, 0, 1)
-
-		for _, path := range archiveFiles {
-			split := strings.SplitAfterN(path, "/", 2)
-			if len(split) == 2 {
-				if !slices.Contains(folderNames, split[0]) {
-					folderNames = append(folderNames, split[0])
-				}
-			}
-		}
-
-		var newPkg storage.Pkg
-
-		if len(folderNames) > 1 {
-			fmt.Println("This would extract the following folders and files into /opt/:")
-			for _, folderName := range folderNames {
-				fmt.Println("\t", folderName)
-			}
-			fmt.Println("Therefore this archive is most likely not supposed to be installed in /opt/")
-			os.Exit(1)
-		} else if len(folderNames) == 1 {
-			newPkg = storage.Pkg{FolderName: strings.Trim(folderNames[0], "/")}
-		} else {
-			fmt.Fprintln(os.Stderr, "Error: archive is empty")
+			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 
@@ -111,7 +85,7 @@ By default it will also symlink the binaries to ~/.local/bin/.`,
 			fmt.Println("No binaries usable")
 		}
 		xdgStorage := storage.New()
-		xdgStorage.AddPkg(newPkg)
+		xdgStorage.AddPkg(*newPkg)
 	},
 }
 
@@ -173,4 +147,130 @@ func symlink(srcPath, destPath string, sudo bool) (linkedBinaries []string) {
 		}
 	}
 	return
+}
+
+func gatherPackageInfo(path string) (*storage.Pkg, error) {
+	archive, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("Error: could not access archive")
+	}
+
+	var format archives.Decompressor
+	switch filepath.Ext(path) {
+	case ".gz":
+		format = archives.Gz{}
+	case ".xz":
+		format = archives.Xz{}
+	default:
+		return nil, fmt.Errorf("Error: archive not supported")
+	}
+
+	decompressedStream, err := format.OpenReader(archive)
+	if err != nil {
+		return nil, fmt.Errorf("Error: could not read from archive")
+	}
+
+	tarReader := tar.NewReader(decompressedStream)
+
+	result := storage.Pkg{}
+	foldername := ""
+	binaries := make([]string, 0)
+
+	potentialBinaries := make(map[string]string)
+	rootFolderCount := 0
+	for {
+		header, err := tarReader.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Fatalln(err)
+		}
+
+		levels := 0
+		parentDir := filepath.Dir(filepath.Clean(header.Name))
+		if parentDir != "." {
+			levels = len(strings.Split(parentDir, "/"))
+		}
+		if levels <= 2 || mapContains(potentialBinaries, header.Name) {
+			switch header.Typeflag {
+			case tar.TypeDir:
+				if levels == 0 {
+					foldername = filepath.Clean(header.Name)
+					rootFolderCount++
+				}
+			case tar.TypeReg:
+				if isExecutable(header, tarReader) {
+					if link, ok := potentialBinaries[header.Name]; ok {
+						binaries = append(binaries, link)
+					} else {
+						binaries = append(binaries, header.Name)
+					}
+				}
+			case tar.TypeSymlink:
+				linkPath := filepath.Join(filepath.Dir(header.Name), header.Linkname)
+				potentialBinaries[linkPath] = header.Name
+			default:
+				fmt.Fprintf(os.Stderr, "Error: unknown filetype: %b in %s\n",
+					header.Typeflag, header.Name)
+			}
+		}
+	}
+
+	if rootFolderCount != 1 {
+		return nil, fmt.Errorf("Error: archive contains %d folders and thus is not supposed to be installed into /opt/", rootFolderCount)
+	}
+
+	if len(binaries) >= 1 {
+		result.Binaries = binaries
+	} else {
+		return nil, fmt.Errorf("Error: archive contains no binaries")
+	}
+
+	if foldername == "" && len(binaries) == 1 {
+		foldername = binaries[0]
+	}
+	result.FolderName = foldername
+
+	return &result, nil
+}
+
+func isExecutable(h *tar.Header, r *tar.Reader) bool {
+	if h.FileInfo().Mode()&0111 == 0 {
+		// file has no execute permission set
+		return false
+	}
+
+	switch filepath.Ext(h.Name) {
+	case ".sh":
+		return true
+	case "", ".py", ".js":
+		magicNumbers := make([]byte, 52)
+		count, err := r.Read(magicNumbers)
+		if err != nil && err != io.EOF {
+			fmt.Fprintln(os.Stderr, "Error: could not open file")
+			return false
+		}
+
+		// Check if it's an elf file
+		if count >= 52 &&
+			magicNumbers[0] == 0x7F && magicNumbers[1] == 0x45 &&
+			magicNumbers[2] == 0x4C && magicNumbers[3] == 0x46 {
+			return true
+		}
+
+		// Check if the file has a shebang
+		if count >= 2 &&
+			magicNumbers[0] == 0x23 && magicNumbers[1] == 0x21 {
+			return true
+		}
+	default:
+		return false
+	}
+	return false
+}
+
+func mapContains[K comparable, V any](m map[K]V, k K) bool {
+	_, ok := m[k]
+	return ok
 }
