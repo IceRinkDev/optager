@@ -43,7 +43,7 @@ By default it will also symlink the binaries to ~/.local/bin/.`,
 		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		newPkg, err := gatherPackageInfo(args[0])
+		newPkg, shouldCreateFolder, err := gatherPackageInfo(args[0])
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
@@ -53,7 +53,21 @@ By default it will also symlink the binaries to ~/.local/bin/.`,
 			newPkg.Name = name
 		}
 
-		err = exec.Command("sudo", "tar", "-xf", args[0], "-C", "/opt/").Run()
+		extractLocation := "/opt/"
+		if shouldCreateFolder {
+			extractLocation = filepath.Join("/opt/", newPkg.FolderName)
+			err = exec.Command("sudo", "mkdir", "-p", extractLocation).Run()
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "Error: could not create folder in /opt/")
+				os.Exit(1)
+			}
+		} else {
+			for i := range len(newPkg.Binaries) {
+				newPkg.Binaries[i] = strings.TrimPrefix(newPkg.Binaries[i], newPkg.FolderName+"/")
+			}
+		}
+
+		err = exec.Command("sudo", "tar", "-xf", args[0], "-C", extractLocation).Run()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Error: could not extract the archive")
 			os.Exit(1)
@@ -62,9 +76,9 @@ By default it will also symlink the binaries to ~/.local/bin/.`,
 		var linkedBinaries []string
 		if global, _ := cmd.Flags().GetBool("global"); global {
 			newPkg.Global = true
-			linkedBinaries = symlinkToRoot(newPkg.FolderName)
+			linkedBinaries = symlinkToRoot(newPkg)
 		} else {
-			linkedBinaries = symlinkToUser(newPkg.FolderName)
+			linkedBinaries = symlinkToUser(newPkg)
 		}
 		if len(linkedBinaries) > 0 {
 			newPkg.Binaries = linkedBinaries
@@ -83,6 +97,11 @@ By default it will also symlink the binaries to ~/.local/bin/.`,
 			fmt.Println(" in the command line")
 		} else {
 			fmt.Println("No binaries usable")
+			pkgPath := filepath.Join("/opt/", newPkg.FolderName)
+			_, err := os.Lstat(pkgPath)
+			if err == nil {
+				exec.Command("sudo", "rm", "-rf", pkgPath).Run()
+			}
 		}
 		xdgStorage := storage.New()
 		xdgStorage.AddPkg(*newPkg)
@@ -95,64 +114,52 @@ func init() {
 	installCmd.Flags().StringP("name", "n", "", "set name for the package")
 }
 
-func symlinkToUser(folder string) []string {
+func symlinkToUser(pkg *storage.Pkg) []string {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error: no home folder found")
 		return nil
 	}
 	localBin := filepath.Join(homeDir, ".local", "bin")
-	err = os.MkdirAll(localBin, 0775)
+	err = os.MkdirAll(localBin, 0755)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error: could not create folder", localBin)
 		return nil
 	}
 
-	pkgBinPath := filepath.Join("/opt", folder, "bin")
-	return symlink(pkgBinPath, localBin, false)
+	return symlink(pkg, localBin, false)
 }
 
-func symlinkToRoot(folder string) []string {
-	pkgBinPath := filepath.Join("/opt", folder, "bin")
-	return symlink(pkgBinPath, "/usr/local/bin/", true)
+func symlinkToRoot(pkg *storage.Pkg) []string {
+	return symlink(pkg, "/usr/local/bin/", true)
 }
 
-func symlink(srcPath, destPath string, sudo bool) (linkedBinaries []string) {
-	pkgBinDir, err := os.Open(srcPath)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			fmt.Fprintln(os.Stderr, "Error: installed package has no bin/ folder")
-		} else {
-			fmt.Fprintln(os.Stderr, "Error: could not access", srcPath)
-		}
-		return
-	}
-	binaries, err := pkgBinDir.Readdirnames(0)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Error: could not read the contents of the", srcPath, "folder")
-		return
-	}
-	for _, binary := range binaries {
+func symlink(pkg *storage.Pkg, destPath string, sudo bool) (linkedBinaries []string) {
+	for _, binary := range pkg.Binaries {
 		var symlinkCmd *exec.Cmd
+
+		linkSrcPath := filepath.Join("/opt/", pkg.FolderName, binary)
+		linkDestPath := filepath.Join(destPath, filepath.Base(binary))
+
 		if sudo {
-			symlinkCmd = exec.Command("sudo", "ln", "-s", filepath.Join(srcPath, binary), filepath.Join(destPath, binary))
+			symlinkCmd = exec.Command("sudo", "ln", "-s", linkSrcPath, linkDestPath)
 		} else {
-			symlinkCmd = exec.Command("ln", "-s", filepath.Join(srcPath, binary), filepath.Join(destPath, binary))
+			symlinkCmd = exec.Command("ln", "-s", linkSrcPath, linkDestPath)
 		}
 		err := symlinkCmd.Run()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Error: could not link binary", binary, "into", destPath)
 		} else {
-			linkedBinaries = append(linkedBinaries, binary)
+			linkedBinaries = append(linkedBinaries, filepath.Base(binary))
 		}
 	}
 	return
 }
 
-func gatherPackageInfo(path string) (*storage.Pkg, error) {
+func gatherPackageInfo(path string) (*storage.Pkg, bool, error) {
 	archive, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("Error: could not access archive")
+		return nil, false, fmt.Errorf("Error: could not access archive")
 	}
 
 	var format archives.Decompressor
@@ -162,12 +169,12 @@ func gatherPackageInfo(path string) (*storage.Pkg, error) {
 	case ".xz":
 		format = archives.Xz{}
 	default:
-		return nil, fmt.Errorf("Error: archive not supported")
+		return nil, false, fmt.Errorf("Error: archive not supported")
 	}
 
 	decompressedStream, err := format.OpenReader(archive)
 	if err != nil {
-		return nil, fmt.Errorf("Error: could not read from archive")
+		return nil, false, fmt.Errorf("Error: could not read from archive")
 	}
 
 	tarReader := tar.NewReader(decompressedStream)
@@ -217,36 +224,49 @@ func gatherPackageInfo(path string) (*storage.Pkg, error) {
 		}
 	}
 
-	if rootFolderCount != 1 {
-		return nil, fmt.Errorf("Error: archive contains %d folders and thus is not supposed to be installed into /opt/", rootFolderCount)
+	if rootFolderCount > 1 {
+		return nil, false, fmt.Errorf("Error: archive contains %d folders and thus is not supposed to be installed into /opt/", rootFolderCount)
 	}
 
 	if len(binaries) >= 1 {
 		result.Binaries = binaries
 	} else {
-		return nil, fmt.Errorf("Error: archive contains no binaries")
+		return nil, false, fmt.Errorf("Error: archive contains no binaries")
 	}
 
-	if foldername == "" && len(binaries) == 1 {
-		foldername = binaries[0]
+	shouldCreatePkgFolder := false
+	if foldername == "" {
+		shouldCreatePkgFolder = true
+		if len(binaries) == 1 {
+			foldername = binaries[0]
+		} else if len(binaries) > 1 {
+			archiveName := filepath.Base(path)
+			ext := filepath.Ext(archiveName)
+			// Loop to trim multiple extensions like .tar.gz
+			for ext != "" {
+				archiveName = strings.TrimSuffix(archiveName, ext)
+				ext = filepath.Ext(archiveName)
+			}
+			foldername = archiveName
+		}
 	}
 	result.FolderName = foldername
 
-	return &result, nil
+	return &result, shouldCreatePkgFolder, nil
 }
 
-func isExecutable(h *tar.Header, r *tar.Reader) bool {
-	if h.FileInfo().Mode()&0111 == 0 {
-		// file has no execute permission set
+func isExecutable(header *tar.Header, reader *tar.Reader) bool {
+	// Check if file has no execute permission set
+	if header.FileInfo().Mode()&0111 == 0 {
 		return false
 	}
 
-	switch filepath.Ext(h.Name) {
+	switch filepath.Ext(header.Name) {
 	case ".sh":
 		return true
-	case "", ".py", ".js":
+	default:
 		magicNumbers := make([]byte, 52)
-		count, err := r.Read(magicNumbers)
+		count, err := reader.Read(magicNumbers)
 		if err != nil && err != io.EOF {
 			fmt.Fprintln(os.Stderr, "Error: could not open file")
 			return false
@@ -264,8 +284,6 @@ func isExecutable(h *tar.Header, r *tar.Reader) bool {
 			magicNumbers[0] == 0x23 && magicNumbers[1] == 0x21 {
 			return true
 		}
-	default:
-		return false
 	}
 	return false
 }
