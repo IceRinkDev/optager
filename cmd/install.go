@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"archive/tar"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/IceRinkDev/optager/internal/storage"
 	"github.com/mholt/archives"
@@ -43,7 +45,29 @@ By default it will also symlink the binaries to ~/.local/bin/.`,
 		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
+		wait := make(chan bool)
+		ctx, cancelProcessingDots := context.WithCancel(context.Background())
+		go func(ctx context.Context) {
+			fmt.Print("Analyzing archive...")
+			for {
+				select {
+				case <-ctx.Done():
+					fmt.Println()
+					wait <- false
+					return
+				case <-time.After(500 * time.Millisecond):
+					fmt.Print(".")
+				}
+			}
+		}(ctx)
+
 		newPkg, shouldCreateFolder, err := gatherPackageInfo(args[0])
+
+		// Cancel the goroutine that prints dots and wait for it to finish
+		cancelProcessingDots()
+		<-wait
+		close(wait)
+
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
