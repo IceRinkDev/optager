@@ -26,7 +26,7 @@ jobs:
       - name: Install dependencies
         run: go get .
       - name: Build
-        run: go build -v -ldflags="-s -w"
+        run: go build -v -ldflags="-s -w -X github.com/IceRinkDev/optager/cmd.version=$TAG_NAME"
       - name: Compress
         run: tar -czf optager-$TAG_NAME.tar.gz optager
       - name: Create Release
