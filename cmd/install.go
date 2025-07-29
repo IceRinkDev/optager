@@ -209,6 +209,7 @@ func gatherPackageInfo(path string) (*storage.Pkg, bool, error) {
 
 	potentialBinaries := make(map[string]string)
 	rootFolderCount := 0
+	binDirPath := ""
 	for {
 		header, err := tarReader.Next()
 		if err == io.EOF {
@@ -229,6 +230,8 @@ func gatherPackageInfo(path string) (*storage.Pkg, bool, error) {
 				if levels == 0 {
 					foldername = filepath.Clean(header.Name)
 					rootFolderCount++
+				} else if levels == 1 && filepath.Base(header.Name) == "bin" {
+					binDirPath = filepath.Clean(header.Name)
 				}
 			case tar.TypeReg:
 				if isExecutable(header, tarReader) {
@@ -250,6 +253,17 @@ func gatherPackageInfo(path string) (*storage.Pkg, bool, error) {
 
 	if rootFolderCount > 1 {
 		return nil, false, fmt.Errorf("Error: archive contains %d folders and thus is not supposed to be installed into /opt/", rootFolderCount)
+	}
+
+	if binDirPath != "" {
+		i := 0
+		for _, binPath := range binaries {
+			if strings.HasPrefix(binPath, binDirPath) {
+				binaries[i] = binPath
+				i++
+			}
+		}
+		binaries = binaries[:i]
 	}
 
 	if len(binaries) >= 1 {
